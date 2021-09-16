@@ -1,17 +1,16 @@
 # Multimodal Neural Ordinary Differential Equations
 
-This is the implementation of the Multimodal Neural Ordinary Differential Equations (MultiNODEs) presented in Wendland, Birkenbihl etal. [1]. The MultiNODE approach is a generative model which extend the Neural ODEs [2] to deal with missing data and static variables. As a consequence of that the MultiNODEs can handle and generate new patient trajectories. 
-The Multimodal Neural ODE code adapts some code of other repositories. Therefore, please cite in addition to the MultiNODE paper [1] also the Neural Ordinary Differential Equations [2] paper, the Handling Incomplete Data using VAEs paper [3] and the Adaptive Checkpoint Adjoint Method for Gradient Estimation in Neural ODE paper [4], if you use this code for your own research.
-Our code is build on top of the Neural ODE code from [2] and extend their code. Therefore some parts of the code of [3] and [4] were used.
+Here we present the material (code and results) corresponding to publication of the Multimodal Neural Ordinary Differential Equations (MultiNODEs) presented in Wendland, Birkenbihl et al. [1]. The MultiNODE approach is a generative model which builds on the Neural ODEs [2] and extends it to be able to deal with missing data and static variables. In consequence, the proposed MultiNODEs can handle and generate fully sythetic patient trajectories from complex, incomplete clinical data. 
+The MultiNODEcode adapts some code of other repositories, namely the Neural Ordinary Differential Equations [2], the "Handling Incomplete Data using VAEs" paper [3] and the "Adaptive Checkpoint Adjoint Method for Gradient Estimation in Neural ODE" paper [4].
 
-Explanations of the computed methods can be find in the main.py file and in [1].
+Explanations to the computed methods can be found in the main.py file and in [1].
 
-**Important**: The data used in our analysis is not included in this repository - please contact PPMI (https://www.ppmi-info.org/access-data-specimens/download-data/) and NACC (https://naccdata.org/requesting-data/submit-data-request) to get access to the data, if you want to run our code with the data used in [1].
+**Data Availability**: The real world data used in our analysis is subject to data privacy and thus can not be included in this repository. Please contact PPMI (https://www.ppmi-info.org/access-data-specimens/download-data/) and NACC (https://naccdata.org/requesting-data/submit-data-request) to get access to the data.
 
 # Content of the repository
-* Plots of the paper (and supplementary plots of all variables) for the PPMI data and the NACC data in the folder "Plots"
-* The main skripts to run the analysis of the PPMI data in the "code" folder 
-* The analysis of the SIR data in the "SIR-example" folder
+* Plots of all variables and results for the PPMI data and the NACC data in the folder "Plots" (for brevity, not all plots could be shown in the manuscript). 
+* The main skripts to run the analysis is presented in the "code" folder 
+* All code for the analysis of the simulated SIR data can be found in the "SIR-example" folder
 
 # How to run the Code
 
