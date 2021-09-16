@@ -37,7 +37,7 @@ To run our code it is necessary to install the following packages
 *Note*: If you want to use the torch_ACA ODE solver, you have to download the code manually and change the directory in the code in the variable "solver" (like in the . You can find the code of the torch_ACA folder here (https://github.com/juntang-zhuang/torch_ACA/tree/dense_state2/torch_ACA). In our implementation we use their code before it was integrated in the TorchDiffEqPack. We never tested the TorchDiffEqPack code of the package, but you can use it by using solver == 'torchdiffeqpack'. When using the TorchDiffEqPack, please cite [4] and [12]
 
 # References 
-[1] Philipp Wendland, Colin Birkenbihl, Marc Gomez-Freixa, Maik Kschischo, Holger Fröhlich. "Generation of realistic synthetic data using multimodal neural differential equations". 2021
+[1] Philipp Wendland, Colin Birkenbihl, Marc Gomez-Freixa, Meemansa Sood, Maik Kschischo, Holger Fröhlich. "Generation of realistic synthetic data using multimodal neural differential equations". 2021
 
 [2] Ricky T. Q. Chen, Yulia Rubanova etal. "Neural Ordinary Differential Equations." Advances in Neural Information Processing Systems. arXiv: 1806.07366. 2018
 
