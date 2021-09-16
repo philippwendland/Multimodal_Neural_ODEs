@@ -1,6 +1,6 @@
 # Multimodal Neural Ordinary Differential Equations
 
-Here we present the material (code and results) corresponding to publication of the Multimodal Neural Ordinary Differential Equations (MultiNODEs) presented in Wendland, Birkenbihl et al. [1]. The MultiNODE approach is a generative model which builds on the Neural ODEs [2] and extends it to be able to deal with missing data and static variables. In consequence, the proposed MultiNODEs can handle and generate fully sythetic patient trajectories from complex, incomplete clinical data. 
+Here we present the material (code and results) corresponding to publication of the Multimodal Neural Ordinary Differential Equations (MultiNODEs) presented in Wendland, Birkenbihl et al. [1]. The MultiNODE approach is a generative model which builds on the Neural ODEs [2] and extends it to be able to deal with missing data and static variables. In consequence, the proposed MultiNODEs can handle and generate fully synthetic patient trajectories from complex, incomplete clinical data. 
 The MultiNODEcode adapts some code of other repositories, namely the Neural Ordinary Differential Equations [2], the "Handling Incomplete Data using VAEs" paper [3] and the "Adaptive Checkpoint Adjoint Method for Gradient Estimation in Neural ODE" paper [4].
 
 Explanations to the computed methods can be found in the main.py file and in [1].
