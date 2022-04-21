@@ -465,8 +465,11 @@ class Statdecode(nn.Module):
     def forward(self,y_latent,samples_s,staticdata_onehot,static_types,true_miss_mask, indices, tau=1,batch_norm=False,batchmean=None,batchvar=None,generation_prior=False,output_prior=False):
         
         #Computing the parameters of the p(z|s) distribution
-        mean_pz = self.mean_pz_layer(samples_s)
-        log_var_pz = torch.zeros(size=[samples_s.shape[0],self.z_dim])
+        
+        if samples_s is not None:
+        
+            mean_pz = self.mean_pz_layer(samples_s)
+            log_var_pz = torch.zeros(size=[samples_s.shape[0],self.z_dim])
         
         #By generating from the prior you have to use the parameters of the prior distribution
         if(generation_prior==True):
@@ -491,6 +494,7 @@ class Statdecode(nn.Module):
             
         else:
             #computing the output data
+            
             out = torch.zeros(size=y_latent.shape)
             log_p_x = torch.zeros(size=y_latent.shape)
             
@@ -502,9 +506,10 @@ class Statdecode(nn.Module):
                     params = self.linears[i](y_latent)
                     
                     #Compute loglik of the independent yd variables
+                    
                     data = staticdata_onehot[indices,onehotind].clone()
                     
-                    #data[torch.isnan(data)]=0
+                    data[torch.isnan(data)]=0
                     
                     mean = params[:,0]
                     
@@ -544,7 +549,13 @@ class Statdecode(nn.Module):
                     #data has to be one hot encoded for the log_p_x
                     #data_onehot = pd.get_dummies(data).values
                     
-                    data = data[indices,:]
+                    #print(data.dtype)
+                    #print(x_prob.dtype)
+                    
+                    data = data[indices,:].float()
+                    
+                    #data + torch.log(x_prob+eps)
+                    
                     
                     log = torch.sum(data * torch.log(x_prob + eps), dim=1).float().to(self.device)
                     
@@ -1167,28 +1178,13 @@ def training(solver, nepochs, lr, train_dir, device, samp_trajs, samp_ts, latent
 
     return loss, rec_lossavg, klavg #first one is reconstruction loss
 
-def reconRP(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nhidden, obs_dim, activation_ode = 'elu',num_odelayers=1,W_train=None, enctype = 'RNN',dectype = 'RNN', rnn_nhidden_enc=0.5,activation_rnn = 'relu',rnn_nhidden_dec=0.5,activation_dec = 'relu',static=None,staticdata_onehot=None,staticdata_types_dict=None,static_true_miss_mask=None,s_dim_static=0,z_dim_static=0,batch_norm_static=False, timemax = 1, negtime = False, timemin = None,num=2000):
+def reconRP(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nhidden, obs_dim, activation_ode = 'elu',num_odelayers=1,W_train=None, enctype = 'RNN',dectype = 'RNN', rnn_nhidden_enc=0.5,activation_rnn = 'relu',rnn_nhidden_dec=0.5,activation_dec = 'relu',static=None,staticdata_onehot=None,staticdata_types_dict=None,static_true_miss_mask=None,s_dim_static=0,z_dim_static=0,batch_norm_static=False, timemax = 1, negtime = False, timemin = None,num=2000, save_latent=False):
 
     #timemax: Maximum of the simulated time
     #negtime is boolean, whether time is backwards predicted or not
     #timemin: just necessary, if negtime = True, minimum time of simulations
     if solver == 'Adjoint':
         from torchdiffeq import odeint_adjoint as odeint
-    
-    elif solver == 'torchdiffeqpack':
-        from TorchDiffEqPack.odesolver import odesolve    
-        ts_pos = np.linspace(0., timemax, num=num)
-        ts_pos = torch.from_numpy(ts_pos).float().to(device)
-        
-        options = {}
-        options.update({'method': 'Dopri5'})
-        options.update({'h': 0.01})
-        options.update({'rtol': 1e-3})
-        options.update({'atol': 1e-3})
-        options.update({'t0': ts_pos.tolist()[0] })
-        options.update({'t1': ts_pos.tolist()[-1] })
-        options.update({'t_eval':ts_pos.tolist()})
-    
     elif solver:
         import sys
         sys.path.insert(1, solver)
@@ -1293,6 +1289,7 @@ def reconRP(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nhidden, o
                 if (dectype == 'LSTM'):
                     dec2out.load_state_dict(checkpoint['dec2out_state_dict'])
                 print('Loaded ckpt from {}'.format(ckpt_path))
+    
         X = samp_trajs #not necessary, but consistent with training
         Wmul = W
         if ~np.all(W.cpu().numpy() == 1.0) and np.all(np.logical_or(W.cpu().numpy() == 0.0, W.cpu().numpy() == 1.0)):
@@ -1346,10 +1343,28 @@ def reconRP(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nhidden, o
             logvarpz = logvarpz.to(device)
             
             zinit = torch.cat((z0,b0),dim=1) #extending z0   
-        
+            
+            if save_latent:
+                samples_s_np = samples_s.cpu().numpy()
+                samples_s_df = pd.DataFrame(samples_s_np)
+                samples_s_df.to_csv('mixture_latent.csv')
+                
+                b0_np = b0.cpu().numpy()
+                b0_df = pd.DataFrame(b0_np)
+                b0_df.to_csv('static_latent.csv')
+                
+                z0_np = z0.cpu().numpy()
+                z0_df = pd.DataFrame(z0_np)
+                z0_df.to_csv('longitudinal_latent.csv')
+                
         else:
             zinit = z0
-
+                
+            if save_latent:
+                z0_np = z0.cpu().numpy()
+                z0_df = pd.DataFrame(z0_np)
+                z0_df.to_csv('longitudinal_latent.csv')
+        
         ts_pos = np.linspace(0., timemax, num=num)
         ts_pos = torch.from_numpy(ts_pos).float().to(device)
         
@@ -1645,66 +1660,70 @@ def valloss(solver, train_dir, device,samp_trajs, samp_ts, latent_dim, nhidden, 
 
         return xs_pos, out, loss, klavg, rec_lossavg, loss_reconstruction_stat, analytic_kl_stat, KL_s
     
-def visualizationSIR2(correctdata, correct_ts, samp_train, samp_ts,W, xs_1, ts_1,xs_2,ts_2,xs_3,ts_3, varnumber,varnames, negtime,device,labels=None, legend=True):
+def visualizationSIR_eps_median(correctdata, correct_ts, xs_1, ts_1,xs_2,ts_2,xs_3,ts_3, varnumber,varnames, negtime,device,labels=None, legend=True):
     # take first trajectory for visualization
     # varnumber: number of plottet variable
     # varnames: names of the variables
     # gen: specifies, if data are generated files, changes description
-    
     # num_of_visits: Specifies, how many visits are used for prediction
     alpha=0.05
-    
+
     xs_pos = torch.from_numpy(xs_1).float().to(device)
+    xs_pos = xs_1    
     
-    xsp_mean = xs_pos.mean(dim=0)
-    xsp_std = xs_pos.std(dim=0)
-    
+    xsp_mean = np.nanmedian(xs_1,axis=0)
+    #xsp_std = xs_pos.std(dim=0)
+
     #KI of mean
-    KIxspu = xsp_mean - t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0]) 
-    KIxspo = xsp_mean + t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0])
-    
+    # KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    # KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
+
     plt.figure()
     plt.plot(ts_1, xsp_mean[:, varnumber], 'darkorchid',
               label=labels[0])
-    plt.plot(ts_1, KIxspo[:,varnumber], 'darkorchid', linestyle = ':')
-    plt.plot(ts_1, KIxspu[:,varnumber], 'darkorchid', linestyle = ':')
+    # plt.plot(ts_1, KIxspu[:, varnumber], 'darkorchid',
+              # linestyle=':')
+    # plt.plot(ts_1, KIxspo[:, varnumber], 'darkorchid',
+              # linestyle=':')
     #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
 
     xs_gen = torch.from_numpy(xs_2).float().to(device)
+    xs_pos=xs_2
     
-    xspgen_mean = xs_gen.mean(dim=0)
-    xspgen_std = xs_gen.std(dim=0)
-    
+    xsp_mean = np.nanmedian(xs_2,axis=0)
+    #xsp_std = xs_pos.std(dim=0)
+
     #KI of mean
-    KIxspugen = xspgen_mean - t.ppf(1-alpha/2,xs_gen.shape[0])*xspgen_std/np.sqrt(xs_gen.shape[0]) 
-    KIxspogen = xspgen_mean + t.ppf(1-alpha/2,xs_gen.shape[0])*xspgen_std/np.sqrt(xs_gen.shape[0])
+    # KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    # KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
     
-    plt.plot(ts_2, xspgen_mean[:, varnumber], '#ffa82e',
+    plt.plot(ts_2, xsp_mean[:, varnumber], '#ffa82e',
               label=labels[1])
-    plt.plot(ts_2, KIxspogen[:,varnumber], '#ffa82e', linestyle = ':')
-    plt.plot(ts_2, KIxspugen[:,varnumber], '#ffa82e', linestyle = ':')
-    #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
-    
+    # plt.plot(ts_2, KIxspu[:, varnumber], '#ffa82e',
+              # linestyle=':')
+    # plt.plot(ts_2, KIxspo[:, varnumber], '#ffa82e',
+              # linestyle=':')
+
     xs_pos = torch.from_numpy(xs_3).float().to(device)
-    
-    xsp_mean = xs_pos.mean(dim=0)
-    xsp_std = xs_pos.std(dim=0)
-    
+    xs_pos=xs_3
+
+    xsp_mean = np.nanmedian(xs_3,axis=0)
+    #xsp_std = xs_pos.std(dim=0)
+
     #KI of mean
-    KIxspu = xsp_mean - t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0]) 
-    KIxspo = xsp_mean + t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0])
-    
+    # KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    # KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
     plt.plot(ts_3, xsp_mean[:, varnumber], 'green',
               label=labels[2])
-    plt.plot(ts_3, KIxspo[:,varnumber], 'green', linestyle = ':')
-    plt.plot(ts_3, KIxspu[:,varnumber], 'green', linestyle = ':')
-    #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
-    
+    # plt.plot(ts_3, KIxspu[:, varnumber], 'green',
+              # linestyle=':')
+    # plt.plot(ts_3, KIxspo[:, varnumber], 'green',
+              # linestyle=':')
+
     plt.plot(correct_ts, correctdata[0,:,varnumber],
                 label='theoretical SIR model', color='black')
-    
-    plt.scatter(samp_ts, samp_train[:,:,varnumber],
-                label='real sample', s = 7, linestyle = 'None', color='limegreen')
+
+    #plt.plot([], [], ':', color='darkorchid', label = '2.5% / 97.5% percentile')
     
 
     plt.xlabel('Time')
@@ -1715,132 +1734,149 @@ def visualizationSIR2(correctdata, correct_ts, samp_train, samp_ts,W, xs_1, ts_1
     plt.savefig('./vistime.png', dpi=500)
     print('Saved visualization figure at {}'.format('./vis.png'))
     
-def visualizationSIR_eps(correctdata, correct_ts, xs_1, ts_1,xs_2,ts_2,xs_3,ts_3, varnumber,varnames, negtime,device,labels=None, legend=True):
+def visualizationSIR_t_median(correct_ts, noisy, xs_1, ts_1,xs_2,ts_2,xs_3,ts_3, varnumber,varnames, negtime,device,labels=None, legend=True):
     # take first trajectory for visualization
     # varnumber: number of plottet variable
     # varnames: names of the variables
     # gen: specifies, if data are generated files, changes description
-    
     # num_of_visits: Specifies, how many visits are used for prediction
     alpha=0.05
-    
+
     xs_pos = torch.from_numpy(xs_1).float().to(device)
+    xs_pos=xs_1
     
-    xsp_mean = xs_pos.mean(dim=0)
-    xsp_std = xs_pos.std(dim=0)
-    
+    xsp_mean = np.nanmedian(xs_pos,axis=0)
+
     #KI of mean
-    KIxspu = xsp_mean - t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0]) 
-    KIxspo = xsp_mean + t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0])
-    
+    #KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    #KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
+
     plt.figure()
-    plt.plot(ts_1, xsp_mean[:, varnumber], 'darkorchid',
-              label=labels[0])
+    plt.plot(ts_1, xsp_mean[:, varnumber], color = 'darkorchid',              label=labels[0])
+    #plt.plot(ts_1, KIxspo[:,varnumber], color = 'darkorchid', linestyle = ':')
+    #plt.plot(ts_1, KIxspu[:,varnumber], color = 'darkorchid', linestyle = ':')
     #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
 
     xs_gen = torch.from_numpy(xs_2).float().to(device)
+    xs_pos=xs_2
     
-    xspgen_mean = xs_gen.mean(dim=0)
-    xspgen_std = xs_gen.std(dim=0)
-    
+    xsp_mean = np.nanmedian(xs_pos,axis=0)
+
     #KI of mean
-    KIxspugen = xspgen_mean - t.ppf(1-alpha/2,xs_gen.shape[0])*xspgen_std/np.sqrt(xs_gen.shape[0]) 
-    KIxspogen = xspgen_mean + t.ppf(1-alpha/2,xs_gen.shape[0])*xspgen_std/np.sqrt(xs_gen.shape[0])
+    #KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    #KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
     
-    plt.plot(ts_2, xspgen_mean[:, varnumber], '#ffa82e',
+    plt.plot(ts_2, xsp_mean[:, varnumber], color='#ffa82e',
               label=labels[1])
-    
-    xs_pos = torch.from_numpy(xs_3).float().to(device)
-    
-    xsp_mean = xs_pos.mean(dim=0)
-    xsp_std = xs_pos.std(dim=0)
-    
-    #KI of mean
-    KIxspu = xsp_mean - t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0]) 
-    KIxspo = xsp_mean + t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0])
-    
-    plt.plot(ts_3, xsp_mean[:, varnumber], 'green',
-              label=labels[2])
-    
-    plt.plot(correct_ts, correctdata[0,:,varnumber],
-                label='theoretical SIR model', color='black')
-    
-    plt.xlabel('Time')
-    plt.ylabel('People')
-    if legend == True:
-        plt.legend()
-    plt.title(str(varnames[varnumber]))
-    plt.savefig('./vistime.png', dpi=500)
-    print('Saved visualization figure at {}'.format('./vis.png'))
-    
-def visualizationSIR_t(correct_ts, noisy, xs_1, ts_1,xs_2,ts_2,xs_3,ts_3, varnumber,varnames, negtime,device,labels=None, legend=True):
-    # take first trajectory for visualization
-    # varnumber: number of plottet variable
-    # varnames: names of the variables
-    # gen: specifies, if data are generated files, changes description
-    
-    # num_of_visits: Specifies, how many visits are used for prediction
-    alpha=0.05
-    
-    xs_pos = torch.from_numpy(xs_1).float().to(device)
-    
-    xsp_mean = xs_pos.mean(dim=0)
-    xsp_std = xs_pos.std(dim=0)
-    
-    #KI of mean
-    KIxspu = xsp_mean - t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0]) 
-    KIxspo = xsp_mean + t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0])
-    
-    plt.figure()
-    plt.plot(ts_1, xsp_mean[:, varnumber], color = 'darkorchid',
-              label=labels[0])
-    plt.plot(ts_1, KIxspo[:,varnumber], color = 'darkorchid', linestyle = ':')
-    plt.plot(ts_1, KIxspu[:,varnumber], color = 'darkorchid', linestyle = ':')
+    #plt.plot(ts_2, KIxspo[:,varnumber], color='#ffa82e', linestyle = ':')
+    #plt.plot(ts_2, KIxspu[:,varnumber], color='#ffa82e', linestyle = ':')
     #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
 
-    xs_gen = torch.from_numpy(xs_2).float().to(device)
-    
-    xspgen_mean = xs_gen.mean(dim=0)
-    xspgen_std = xs_gen.std(dim=0)
-    
-    #KI of mean
-    KIxspugen = xspgen_mean - t.ppf(1-alpha/2,xs_gen.shape[0])*xspgen_std/np.sqrt(xs_gen.shape[0]) 
-    KIxspogen = xspgen_mean + t.ppf(1-alpha/2,xs_gen.shape[0])*xspgen_std/np.sqrt(xs_gen.shape[0])
-    
-    plt.plot(ts_2, xspgen_mean[:, varnumber], color='#ffa82e',
-              label=labels[1])
-    plt.plot(ts_2, KIxspogen[:,varnumber], color='#ffa82e', linestyle = ':')
-    plt.plot(ts_2, KIxspugen[:,varnumber], color='#ffa82e', linestyle = ':')
-    #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
-    
     xs_pos = torch.from_numpy(xs_3).float().to(device)
-    
-    xsp_mean = xs_pos.mean(dim=0)
-    xsp_std = xs_pos.std(dim=0)
-    
+    xs_pos=xs_3
+
+    xsp_mean = np.nanmedian(xs_pos,axis=0)
+
     #KI of mean
-    KIxspu = xsp_mean - t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0]) 
-    KIxspo = xsp_mean + t.ppf(1-alpha/2,xs_pos.shape[0])*xsp_std/np.sqrt(xs_pos.shape[0])
-    
+    #KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    #KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
     plt.plot(ts_3, xsp_mean[:, varnumber], color = 'green',
               label=labels[2])
-    plt.plot(ts_3, KIxspo[:,varnumber], color = 'green', linestyle = ':')
-    plt.plot(ts_3, KIxspu[:,varnumber], color = 'green', linestyle = ':')
+    #plt.plot(ts_3, KIxspo[:,varnumber], color = 'green', linestyle = ':')
+    #plt.plot(ts_3, KIxspu[:,varnumber], color = 'green', linestyle = ':')
     #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
-    
+
     index_5 = np.linspace(0,199,5,dtype=int)
     index_10 = np.linspace(0,199,10,dtype=int)
     index_100 = np.linspace(0,199,100,dtype=int)
-    
-    plt.scatter(correct_ts[index_5], noisy[0,index_5,varnumber],
-                label='real sample t=5', s = 7, linestyle = 'None', color='darkviolet')
-    
+
+    plt.scatter(correct_ts[index_5], noisy[0,index_5,varnumber],                s = 7, linestyle = 'None', color='darkviolet')
+
     plt.scatter(correct_ts[index_10], noisy[1,index_10,varnumber],
-                label='real sample t=10', s = 7, linestyle = 'None', color='#ffbb5c')
-        
+                s = 7, linestyle = 'None', color='#ffbb5c')
+
     plt.scatter(correct_ts[index_100], noisy[2,index_100,varnumber],
-                label='real sample t=100', s = 7, linestyle = 'None',color='limegreen')
+                s = 7, linestyle = 'None',color='limegreen')
     
+    plt.plot([], [], 'o', color='darkviolet', label = 'real sample t=5')
+    plt.plot([], [], 'o', color='#ffbb5c', label = 'real sample t=10')
+    plt.plot([], [], 'o', color='limegreen', label = 'real sample t=100')
+    #plt.plot([], [], ':', color='darkorchid', label = '2.5% / 97.5% percentile')
+    
+    plt.xlabel('Time')
+    plt.ylabel('People')
+    if legend == True:
+        plt.legend()
+    plt.title(str(varnames[varnumber]))
+    plt.savefig('./vistime.png', dpi=500)
+    print('Saved visualization figure at {}'.format('./vis.png'))
+
+
+def visualizationSIR_median(correctdata, correct_ts, samp_train, samp_ts,W, xs_1, ts_1,xs_2,ts_2,xs_3,ts_3, varnumber,varnames, negtime,device,labels=None, legend=True):
+    # take first trajectory for visualization
+    # varnumber: number of plottet variable
+    # varnames: names of the variables
+    # gen: specifies, if data are generated files, changes description
+    # num_of_visits: Specifies, how many visits are used for prediction
+    alpha=0.05
+
+    xs_pos = torch.from_numpy(xs_1).float().to(device)
+    xs_pos=xs_1
+    
+    xsp_mean = np.nanmedian(xs_pos,axis=0)
+
+    #KI of mean
+    #KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    #KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
+
+    plt.figure()
+    plt.plot(ts_1, xsp_mean[:, varnumber], 'darkorchid',
+              label=labels[0])
+    #plt.plot(ts_1, KIxspo[:,varnumber], 'darkorchid', linestyle = ':')
+    #plt.plot(ts_1, KIxspu[:,varnumber], 'darkorchid', linestyle = ':')
+    #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
+
+    xs_gen = torch.from_numpy(xs_2).float().to(device)
+    
+    xs_pos=xs_2
+    
+    xsp_mean = np.nanmedian(xs_pos,axis=0)
+
+    #KI of mean
+    #KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    #KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
+    
+    plt.plot(ts_2, xsp_mean[:, varnumber], '#ffa82e',
+              label=labels[1])
+    #plt.plot(ts_2, KIxspo[:,varnumber], '#ffa82e', linestyle = ':')    
+    #plt.plot(ts_2, KIxspu[:,varnumber], '#ffa82e', linestyle = ':')    #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
+
+    xs_pos = torch.from_numpy(xs_3).float().to(device)
+
+    xs_pos=xs_3
+
+    xsp_mean = np.nanmedian(xs_pos,axis=0)
+
+    #KI of mean
+    #KIxspu = np.nanpercentile(xs_pos,2.5,axis=0)
+    #KIxspo = np.nanpercentile(xs_pos,97.5,axis=0)
+    
+    plt.plot(ts_3, xsp_mean[:, varnumber], 'green',
+              label=labels[2])
+    #plt.plot(ts_3, KIxspo[:,varnumber], 'green', linestyle = ':')
+    #plt.plot(ts_3, KIxspu[:,varnumber], 'green', linestyle = ':')
+    #plt.errorbar(ts_pos, xsp_mean[:, varnumber], yerr=xsp_std[:,varnumber], fmt = 'o', color = "red")
+
+    plt.plot(correct_ts, correctdata[0,:,varnumber],
+                label='theoretical SIR model', color='black')
+
+    plt.scatter(samp_ts, samp_train[:,:,varnumber],
+                s = 7, linestyle = 'None', color='limegreen')
+
+    plt.plot([], [], 'o', color='limegreen', label = 'real sample')    
+    #plt.plot([], [], ':', color='darkorchid', label = '2.5% / 97.5% percentile')
+    
+
     plt.xlabel('Time')
     plt.ylabel('People')
     if legend == True:
@@ -2240,22 +2276,6 @@ def generationprior(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nh
     
     if solver == 'Adjoint':
         from torchdiffeq import odeint_adjoint as odeint
-    
-    elif solver == 'torchdiffeqpack':
-        from TorchDiffEqPack.odesolver import odesolve
-
-        ts_pos = np.linspace(0., timemax, num=num)
-        ts_pos = torch.from_numpy(ts_pos).float().to(device)
-
-        options = {}
-        options.update({'method': 'Dopri5'})
-        options.update({'h': 0.01})
-        options.update({'rtol': 1e-3})
-        options.update({'atol': 1e-3})
-        options.update({'t0': ts_pos.tolist()[0] })
-        options.update({'t1': ts_pos.tolist()[-1] })
-        options.update({'t_eval':ts_pos.tolist()})
-    
     elif solver:
         import sys
         sys.path.insert(1, solver)
@@ -2319,40 +2339,18 @@ def generationprior(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nh
                 if (dectype == 'LSTM'):
                     dec2out.load_state_dict(checkpoint['dec2out_state_dict'])
                 print('Loaded ckpt from {}'.format(ckpt_path))
-
-        z0 = np.random.normal(size=(samp_trajs.shape[0],latent_dim_number))
-        z0 = torch.from_numpy(z0).float().to(device)
         
-        if s_prob is None:
-            samples_s = np.random.choice(a=s_dim_static,p=[1/s_dim_static]*s_dim_static,size=samp_trajs.shape[0])
-            samples_s_dummy = pd.get_dummies(samples_s).values
-            for i in range(s_dim_static):
-                if any(samples_s==i)==False:
-                    samples_s_dummy = np.insert(samples_s_dummy,obj=i,values=np.zeros(shape=samp_trajs.shape[0]),axis=1)
-        else:
-            samples_s = np.random.choice(a=s_dim_static,p=s_prob,size=samp_trajs.shape[0])
-            samples_s_dummy = pd.get_dummies(samples_s).values
-            for i in range(s_dim_static):
-                if any(samples_s==i)==False:
-                    samples_s_dummy = np.insert(samples_s_dummy,obj=i,values=np.zeros(shape=samp_trajs.shape[0]),axis=1)
+        zinit = torch.from_numpy(pd.read_csv(train_dir+'/main_VirtualPPts.csv').to_numpy()).float()
         
-        samples_s_dummy=samples_s_dummy.astype('float64')
-        samples_s_dummy=torch.Tensor(samples_s_dummy)
+        z0 = zinit[:,:-z_dim_static]
         
-        #Computing the meanpz and logvarpz of the prior distribution
-        meanpz, logvarpz = moduledec(y_latent=None,samples_s=samples_s_dummy,staticdata_onehot=None,static_types=None,true_miss_mask=None, indices=None, tau=1,batch_norm=False,batchmean=None,batchvar=None,generation_prior=True)
-        
-        meanpz = meanpz.detach().numpy()
-        logvarpz = logvarpz.numpy()
-        
-        b0 = np.random.normal(loc = meanpz, scale = np.exp(0.5*logvarpz), size=(samp_trajs.shape[0],z_dim_static))
-        b0 = torch.Tensor(b0).to(device)
+        b0 = zinit[:,-z_dim_static:] 
         
         y_latent = modulefunc.y_forward(b0)
         
-        out = moduledec(y_latent=y_latent,samples_s=samples_s_dummy,staticdata_onehot=None,static_types=staticdata_types_dict,true_miss_mask=None,indices=None, tau=1e-3,batch_norm=False,batchmean=None,batchvar=None,generation_prior=False,output_prior=True)
+        out = moduledec(y_latent=y_latent,samples_s=None,staticdata_onehot=None,static_types=staticdata_types_dict,true_miss_mask=None,indices=None, tau=1e-3,batch_norm=False,batchmean=None,batchvar=None,generation_prior=False,output_prior=True)
 
-        zinit = torch.cat((z0,b0),dim=1) 
+        #zinit = torch.cat((z0,b0),dim=1) 
 
         ts_pos = np.linspace(0., timemax, num=num)
         ts_pos = torch.from_numpy(ts_pos).float().to(device)
@@ -2376,21 +2374,8 @@ def generationprior(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nh
         
         xs_pos=pred_x
         xs_pos = xs_pos.cpu().numpy()
-        
-        #if negtime:
-        #    ts_neg = np.linspace(timemin, 0., num=2000)[::-1].copy()
-        #    ts_neg = torch.from_numpy(ts_neg).float().to(device)
-        #    zs_neg = odeint(func, zinit, ts_neg).permute(1, 0, 2)
-        #    if (LSTM == True):
-        #        xs_neg, (h,c) = dec(zs_neg)
-        #    else:
-        #        xs_neg = dec(zs_neg)
-        #    xs_neg = torch.flip(xs_neg, dims=[0])
-        #    xs_neg = xs_neg.cpu().numpy()
-        #    return xs_pos, ts_pos, xs_neg, ts_neg
-        #else:
-        return xs_pos, ts_pos, out
 
+        return xs_pos, ts_pos, out
 
 def generationPosterior(solver, train_dir, device,samp_trajs,samp_ts, latent_dim, nhidden, obs_dim, activation_ode = 'elu',num_odelayers=1,W_train=None, enctype = 'RNN',dectype = 'RNN', rnn_nhidden_enc=0.5,activation_rnn = 'relu',rnn_nhidden_dec=0.5,activation_dec = 'relu',static=None,staticdata_onehot=None,staticdata_types_dict=None,static_true_miss_mask=None,s_dim_static=0,z_dim_static=0,batch_norm_static=False, timemax = 1, negtime = False, timemin = None,num=2000, sigmalong=1,sigmastat=1,N=1):
 
